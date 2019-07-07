@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+
+   <head>
+      <title>JavaScript Internal Script</title>
+      
+      
+      <script type = "text/JavaScript">
+         function Hello() {
+          var http = new XMLHttpRequest();
+          var url = 'http://localhost/auth/realms/oneomics/protocol/openid-connect/auth';
+          var params = 'scope=openid offline_access&response_type=code&client_id=api&redirect_uri=http://localhost&scope=1234&client_secret=cba440fe-f15b-41c2-b5c9-a8d306556172';
+          http.open('POST', url, true);
+
+          //Send the proper header information along with the request
+          http.setRequestHeader('Content-type', 'application/x-www-form-urlencoded');
+
+          http.onreadystatechange = function() {//Call a function when the state changes.
+              
+                  alert(http.readyState);
+            
+        }
+        http.send(params);
+         }
+      </script>
+   </head>
+
+   <body>
+      <input type = "button" onclick = "Hello();" name = "ok" value = "Go" />
+   </body>
+
+</html>
