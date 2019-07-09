@@ -42,6 +42,7 @@ namespace OpenIdConnectLogin
 		private const string UserAgent =
 			"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_5) AppleWebKit/537.36 (KHTML, like Gecko)"
 			+ " Postman/7.2.2 Chrome/59.0.3071.115 Electron/1.8.8 Safari/537.36";
+		private const string Scope = "openid profile";
 
 		private string _authorizationCode;
 		private string _authSessionIdCookieValue;
@@ -50,13 +51,14 @@ namespace OpenIdConnectLogin
 		private RestClient _restClient;
 		private string _username;
 		private string _password;
+		private string _refreshToken;
 
 		public async Task<string> Run()
 		{
 			Console.WriteLine("OpenIdConnect JWT-Token getter hack, v1.0  (c) SCIEX 2019" + Environment.NewLine);
 			Console.WriteLine($"Signing into; {KeyCloakUrl}");
 			_restClient = new RestClient(KeyCloakUrl)
-				{CookieContainer = new CookieContainer()};
+			{ CookieContainer = new CookieContainer() };
 			Console.Write("Enter your username: ");
 			_username = Console.ReadLine();
 			Console.Write("Enter your password: ");
@@ -69,13 +71,18 @@ namespace OpenIdConnectLogin
 				await PostLoginRequest(html, _username, _password);
 				var tokensJson = await GetTokensFromTokenEndpoint();
 				formattedTokensAsJson = JToken.Parse(tokensJson).ToString(Formatting.Indented);
-				Console.WriteLine(formattedTokensAsJson);
+				_refreshToken = JObject.Parse(formattedTokensAsJson)["refresh_token"].ToString();
 			}
 			catch
 			{
 				Console.WriteLine("Could not log you in, sorry!");
 			}
-			return formattedTokensAsJson;
+
+			var refresh = await GetRefreshTokenFromTokenEndpoint();
+			var refreshAsJson = JToken.Parse(refresh).ToString(Formatting.Indented);
+			return formattedTokensAsJson + Environment.NewLine
+										 + "New Refresh Token:"
+										 + Environment.NewLine + refreshAsJson;
 		}
 
 		private string InitialAuthRequest()
@@ -87,7 +94,7 @@ namespace OpenIdConnectLogin
 				ParameterType.HttpHeader));
 			request.Parameters.Add(new Parameter("client_id", "api",
 				ParameterType.GetOrPost));
-			request.Parameters.Add(new Parameter("scope", "openid",
+			request.Parameters.Add(new Parameter("scope", Scope,
 				ParameterType.GetOrPost));
 			request.Parameters.Add(new Parameter("response_type", "code",
 				ParameterType.GetOrPost));
@@ -168,7 +175,7 @@ namespace OpenIdConnectLogin
 		private async Task<string> GetTokensFromTokenEndpoint()
 		{
 			var request = new RestRequest(TokenEndPointSubUrl, Method.POST);
-			var httpClientHandler = new HttpClientHandler {AllowAutoRedirect = false};
+			var httpClientHandler = new HttpClientHandler { AllowAutoRedirect = false };
 			var client = new HttpClient(httpClientHandler);
 			client.DefaultRequestHeaders.Clear();
 			client.DefaultRequestHeaders.Accept.Add(
@@ -208,7 +215,46 @@ namespace OpenIdConnectLogin
 				}
 			}
 		}
-	
+
+		private async Task<string> GetRefreshTokenFromTokenEndpoint()
+		{
+			var request = new RestRequest(TokenEndPointSubUrl, Method.POST);
+			var httpClientHandler = new HttpClientHandler { AllowAutoRedirect = false };
+			var client = new HttpClient(httpClientHandler);
+			client.DefaultRequestHeaders.Clear();
+			client.DefaultRequestHeaders.Accept.Add(
+				new MediaTypeWithQualityHeaderValue("application/json"));
+			client.DefaultRequestHeaders.AcceptLanguage.Add(
+				new StringWithQualityHeaderValue("en-US"));
+
+			var nvc = new List<KeyValuePair<string, string>>
+			{
+				new KeyValuePair<string, string>("grant_type", "refresh_token"),
+				new KeyValuePair<string, string>("refresh_token", $"{_refreshToken}"),
+				new KeyValuePair<string, string>("client_id", ClientId),
+				new KeyValuePair<string, string>("scope", Scope)
+			};
+			const string tokenUrl = KeyCloakUrl + TokenEndPointSubUrl;
+			var rq = new HttpRequestMessage(HttpMethod.Post, new Uri(tokenUrl));
+			rq.Content = new FormUrlEncodedContent(nvc);
+			rq.Headers.Add("User-Agent", UserAgent);
+			rq.Headers.Add("Connection", "keep-alive");
+			rq.Headers.Add("Cache-control", "no-cache");
+			//			rq.Headers.Add("Cookie",
+			//				$"AUTH_SESSION_ID={_authSessionIdCookieValue}; KC_RESTART={_kcRestartCookieValue}");
+			using (var response = await client.SendAsync(rq))
+			{
+				if (!response.IsSuccessStatusCode)
+					throw new ApplicationException(
+						"Error getting token from the token endpoint");
+				using (var content = response.Content)
+				{
+					var res = await content.ReadAsStringAsync();
+					return res;
+				}
+			}
+		}
+
 		private string AddRedirectParametersToRequestFromHtml(string html, List<Parameter> parameters)
 		{
 			// the first request to the auth point returns an HTML page that the user
