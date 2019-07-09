@@ -95,21 +95,24 @@ namespace OpenIdConnectLogin
 				ParameterType.GetOrPost));
 
 			var response = _restClient.Get(request);
+			if (!response.IsSuccessful)
+				throw new ApplicationException("Initial Login Failed");
 			Debug.Assert(response.Cookies != null, "response.Cookies != null");
 			_authSessionIdCookieValue = response.Cookies
 				.FirstOrDefault(x => x.Name == "AUTH_SESSION_ID")?.Value;
 			_kcRestartCookieValue = response.Cookies
 				.FirstOrDefault(x => x.Name == "KC_RESTART")?.Value;
-
-			return response.IsSuccessful ? response.Content : string.Empty;
+			return response.Content;
 		}
 
-		private async Task PostLoginRequest(string html, string username,
-		string password)
+		private async Task PostLoginRequest(string html, string username, string password)
 		{
+			// Cannot use RestSharp here because RestSharp does not put non-json
+			// correctly into the body of the post
 			var request = new RestRequest(AuthenticateEndPointSubUrl, Method.POST);
+			// disable the auto-redirect so that we don't lose the info
+			// coming back from the initial request.
 			var httpClientHandler = new HttpClientHandler { AllowAutoRedirect = false };
-
 			var client = new HttpClient(httpClientHandler);
 			client.DefaultRequestHeaders.Clear();
 			client.DefaultRequestHeaders.Accept.Add(
@@ -139,17 +142,24 @@ namespace OpenIdConnectLogin
 				new KeyValuePair<string, string>("username", $"{username}"),
 				new KeyValuePair<string, string>("password", $"{password}")
 			};
-			var rq = new HttpRequestMessage(HttpMethod.Post, url);
-			rq.Headers.Add("Cookie", $"AUTH_SESSION_ID={_authSessionIdCookieValue}; KC_RESTART={_kcRestartCookieValue}");
-			rq.Content = new FormUrlEncodedContent(nvc);
-			rq.Headers.Add("User-Agent", UserAgent);
-			rq.Headers.Add("prompt", "login"); // force re-login -- openid spec section 3.1.2.3
+			var httpRequestMessage = new HttpRequestMessage(HttpMethod.Post, url);
+			// Cookies come on the response of the first request
+			// we have to add them manually because we don't have an 
+			// active browser doing this for us and are not using RestSharp here
+			httpRequestMessage.Headers.Add("Cookie", $"AUTH_SESSION_ID={_authSessionIdCookieValue}; KC_RESTART={_kcRestartCookieValue}");
+			httpRequestMessage.Content = new FormUrlEncodedContent(nvc);
+			httpRequestMessage.Headers.Add("User-Agent", UserAgent);
+			httpRequestMessage.Headers.Add("prompt", "login"); // force re-login -- openid spec section 3.1.2.3
 
-			using (var result = await client.SendAsync(rq))
+			using (var result = await client.SendAsync(httpRequestMessage))
 			{
+				if (!result.IsSuccessStatusCode)
+					throw new ApplicationException(
+						"Posting the login request has failed!");
+
 				// this results in a 301 redirect, but with the secrets in the redirect URI location.
-				var hdr = result.Headers.FirstOrDefault(x => x.Key == "Location");
-				_redirectUri = hdr.Value.FirstOrDefault();
+				var locationHeader = result.Headers.FirstOrDefault(x => x.Key == "Location");
+				_redirectUri = locationHeader.Value.FirstOrDefault();
 				var uri = new Uri(_redirectUri);
 				_authorizationCode = HttpUtility.ParseQueryString(uri.Query).Get("code");
 			}
@@ -161,7 +171,6 @@ namespace OpenIdConnectLogin
 			var httpClientHandler = new HttpClientHandler {AllowAutoRedirect = false};
 			var client = new HttpClient(httpClientHandler);
 			client.DefaultRequestHeaders.Clear();
-
 			client.DefaultRequestHeaders.Accept.Add(
 				new MediaTypeWithQualityHeaderValue("*/*"));
 			client.DefaultRequestHeaders.AcceptEncoding.Add(
@@ -187,9 +196,12 @@ namespace OpenIdConnectLogin
 			rq.Headers.Add("Cache-control", "no-cache");
 			rq.Headers.Add("Cookie",
 				$"AUTH_SESSION_ID={_authSessionIdCookieValue}; KC_RESTART={_kcRestartCookieValue}");
-			using (var result = await client.SendAsync(rq))
+			using (var response = await client.SendAsync(rq))
 			{
-				using (var content = result.Content)
+				if (!response.IsSuccessStatusCode)
+					throw new ApplicationException(
+						"Error getting token from the token endpoint");
+				using (var content = response.Content)
 				{
 					var res = await content.ReadAsStringAsync();
 					return res;
@@ -197,9 +209,13 @@ namespace OpenIdConnectLogin
 			}
 		}
 	
-		private string AddRedirectParametersToRequestFromHtml(string html,
-			List<Parameter> parameters)
+		private string AddRedirectParametersToRequestFromHtml(string html, List<Parameter> parameters)
 		{
+			// the first request to the auth point returns an HTML page that the user
+			// needs to use to authenticate.  This page, in addition to the posting logic
+			// has some secrets that are needed if we do the post manually.  We use
+			// the HtmlAgility library to parse the form tag on the returned html.  This is 
+			// very Keycloak specific, and may change in a future version.
 			var doc = new HtmlDocument();
 			doc.LoadHtml(html);
 			var nd = doc.DocumentNode.SelectSingleNode("//form[@id='kc-form-login']");
