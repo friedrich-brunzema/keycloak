@@ -28,17 +28,20 @@ namespace OpenIdConnectLogin
 
 	class Application
 	{
-		private const string KeyCloakUrl = "http://localhost/auth/";
+		private const string KeyCloakUrlStaging = "https://keycloak.dev.oneomics.net/auth/";
+		private const string KeyCloakUrlVerification = "https://keycloak.qa.oneomics.net/auth/";
 
 		private const string TokenEndPointSubUrl =
 			"realms/oneomics/protocol/openid-connect/token";
 		private const string AuthEndPointSubUrl =
-			"realms/oneomics/protocol/openid-connect/auth";
+            "realms/oneomics/protocol/openid-connect/auth";
 		private const string AuthenticateEndPointSubUrl =
 			"realms/oneomics/login-actions/authenticate";
 		private const string RedirectUrl = "http://localhost";
-		private const string ClientSecret = "cba440fe-f15b-41c2-b5c9-a8d306556172";
-		private const string ClientId = "api";
+		private const string ClientSecretStaging = "82112d7e-6c3c-4533-ad12-0d1884c40254";
+        private const string ClientSecretVerification ="8d366b2a-8cc1-4af0-bd70-aa44006b0977";
+
+        private const string ClientId = "automation";
 		private const string UserAgent =
 			"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_5) AppleWebKit/537.36 (KHTML, like Gecko)"
 			+ " Postman/7.2.2 Chrome/59.0.3071.115 Electron/1.8.8 Safari/537.36";
@@ -56,14 +59,14 @@ namespace OpenIdConnectLogin
 		public async Task<string> Run()
 		{
 			Console.WriteLine("OpenIdConnect JWT-Token getter hack, v1.0  (c) SCIEX 2019" + Environment.NewLine);
-			Console.WriteLine($"Signing into; {KeyCloakUrl}");
-			_restClient = new RestClient(KeyCloakUrl)
+			Console.WriteLine($"Signing into; {KeyCloakUrlStaging}");
+			_restClient = new RestClient(KeyCloakUrlStaging)
 			{ CookieContainer = new CookieContainer() };
 			Console.Write("Enter your username: ");
-			_username = Console.ReadLine();
+            _username = Console.ReadLine();
 			Console.Write("Enter your password: ");
-			_password = PasswordHelper.GetPassword();
-
+            _password = PasswordHelper.GetPassword();
+            var accessToken = string.Empty;
 			var formattedTokensAsJson = string.Empty;
 			try
 			{
@@ -72,18 +75,22 @@ namespace OpenIdConnectLogin
 				var tokensJson = await GetTokensFromTokenEndpoint();
 				formattedTokensAsJson = JToken.Parse(tokensJson).ToString(Formatting.Indented);
 				_refreshToken = JObject.Parse(formattedTokensAsJson)["refresh_token"].ToString();
-			}
+                accessToken = JObject.Parse(formattedTokensAsJson)["access_token"].ToString();
+            }
 			catch
 			{
 				Console.WriteLine("Could not log you in, sorry!");
 			}
 
+            // note access token valid for 5 minutes!
+            // refresh token valid for 30 minutes!!
 			var refresh = await GetRefreshTokenFromTokenEndpoint();
 			var refreshAsJson = JToken.Parse(refresh).ToString(Formatting.Indented);
-			return formattedTokensAsJson + Environment.NewLine
-										 + "New Refresh Token:"
-										 + Environment.NewLine + refreshAsJson;
-		}
+            return formattedTokensAsJson + Environment.NewLine
+                                         + "New Refresh Token:"
+                                         + Environment.NewLine + refreshAsJson;
+
+        }
 
 		private string InitialAuthRequest()
 		{
@@ -92,7 +99,7 @@ namespace OpenIdConnectLogin
 			request.Parameters.Add(new Parameter("Accept",
 				"text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8",
 				ParameterType.HttpHeader));
-			request.Parameters.Add(new Parameter("client_id", "api",
+			request.Parameters.Add(new Parameter("client_id", ClientId,
 				ParameterType.GetOrPost));
 			request.Parameters.Add(new Parameter("scope", Scope,
 				ParameterType.GetOrPost));
@@ -160,7 +167,7 @@ namespace OpenIdConnectLogin
 
 			using (var result = await client.SendAsync(httpRequestMessage))
 			{
-				if (!result.IsSuccessStatusCode)
+				if (!result.IsSuccessStatusCode && result.StatusCode != HttpStatusCode.Found)
 					throw new ApplicationException(
 						"Posting the login request has failed!");
 
@@ -175,7 +182,8 @@ namespace OpenIdConnectLogin
 		private async Task<string> GetTokensFromTokenEndpoint()
 		{
 			var request = new RestRequest(TokenEndPointSubUrl, Method.POST);
-			var httpClientHandler = new HttpClientHandler { AllowAutoRedirect = false };
+			var httpClientHandler = new HttpClientHandler { AllowAutoRedirect = false,
+                AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate };
 			var client = new HttpClient(httpClientHandler);
 			client.DefaultRequestHeaders.Clear();
 			client.DefaultRequestHeaders.Accept.Add(
@@ -193,9 +201,9 @@ namespace OpenIdConnectLogin
 				new KeyValuePair<string, string>("code", $"{_authorizationCode}"),
 				new KeyValuePair<string, string>("redirect_uri", RedirectUrl),
 				new KeyValuePair<string, string>("client_id", ClientId),
-				new KeyValuePair<string, string>("client_secret", ClientSecret)
+				new KeyValuePair<string, string>("client_secret", ClientSecretStaging)
 			};
-			const string tokenUrl = KeyCloakUrl + TokenEndPointSubUrl;
+			const string tokenUrl = KeyCloakUrlStaging + TokenEndPointSubUrl;
 			var rq = new HttpRequestMessage(HttpMethod.Post, new Uri(tokenUrl));
 			rq.Content = new FormUrlEncodedContent(nvc);
 			rq.Headers.Add("User-Agent", UserAgent);
@@ -219,8 +227,12 @@ namespace OpenIdConnectLogin
 		private async Task<string> GetRefreshTokenFromTokenEndpoint()
 		{
 			var request = new RestRequest(TokenEndPointSubUrl, Method.POST);
-			var httpClientHandler = new HttpClientHandler { AllowAutoRedirect = false };
-			var client = new HttpClient(httpClientHandler);
+            var httpClientHandler = new HttpClientHandler
+            {
+                AllowAutoRedirect = false,
+                AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate
+            };
+            var client = new HttpClient(httpClientHandler);
 			client.DefaultRequestHeaders.Clear();
 			client.DefaultRequestHeaders.Accept.Add(
 				new MediaTypeWithQualityHeaderValue("application/json"));
@@ -232,16 +244,15 @@ namespace OpenIdConnectLogin
 				new KeyValuePair<string, string>("grant_type", "refresh_token"),
 				new KeyValuePair<string, string>("refresh_token", $"{_refreshToken}"),
 				new KeyValuePair<string, string>("client_id", ClientId),
-				new KeyValuePair<string, string>("scope", Scope)
+                new KeyValuePair<string, string>("client_secret", ClientSecretStaging),
+                new KeyValuePair<string, string>("scope", Scope)
 			};
-			const string tokenUrl = KeyCloakUrl + TokenEndPointSubUrl;
+			const string tokenUrl = KeyCloakUrlStaging + TokenEndPointSubUrl;
 			var rq = new HttpRequestMessage(HttpMethod.Post, new Uri(tokenUrl));
 			rq.Content = new FormUrlEncodedContent(nvc);
 			rq.Headers.Add("User-Agent", UserAgent);
 			rq.Headers.Add("Connection", "keep-alive");
 			rq.Headers.Add("Cache-control", "no-cache");
-			//			rq.Headers.Add("Cookie",
-			//				$"AUTH_SESSION_ID={_authSessionIdCookieValue}; KC_RESTART={_kcRestartCookieValue}");
 			using (var response = await client.SendAsync(rq))
 			{
 				if (!response.IsSuccessStatusCode)
