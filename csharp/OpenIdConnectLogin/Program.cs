@@ -23,25 +23,36 @@ namespace OpenIdConnectLogin
 			var app = new Application();
 			var result = await app.Run();
 			Console.WriteLine(Environment.NewLine + result);
-		}
+            Console.ReadLine();
+        }
 	}
 
 	class Application
 	{
-		private const string KeyCloakUrlStaging = "https://keycloak.dev.oneomics.net/auth/";
+        // WARNING -- these settings below must match the correct URL and IDP.
+        // https://keycloak.qa.oneomics.net/auth/realms/oneomics/.well-known/openid-configuration
+        // has a list of discovery information.  Replace realm name and server name if needed.
+
+        private const string KeyCloakUrlStaging = "https://keycloak.dev.oneomics.net/auth/";
 		private const string KeyCloakUrlVerification = "https://keycloak.qa.oneomics.net/auth/";
 
-		private const string TokenEndPointSubUrl =
+        private const string KeyCloakUrlTokenEndPointVerification =
+            "https://keycloak.qa.oneomics.net/auth/realms/oneomics/protocol/openid-connect/token";
+        // getting this is a bit hard -- go to the keycloak admin, oneomics client, change AccessType to "confidential"
+        // then save.  A new tab appears that has the client secret.  Be sure to reset to Access type to public after.
+        private const string ClientSecretStaging = "82112d7e-6c3c-4533-ad12-0d1884c40254";
+        private const string ClientSecretVerification = "ff36904c-75b7-4086-9eda-607fe3e2e92e";
+        // the re-direct URL must match the settings on the Keycloak IDP
+        private const string RedirectUrl = "https://qa.oneomics.net/";
+        private const string ClientId = "oneomics";
+
+        private const string TokenEndPointSubUrl =
 			"realms/oneomics/protocol/openid-connect/token";
 		private const string AuthEndPointSubUrl =
             "realms/oneomics/protocol/openid-connect/auth";
 		private const string AuthenticateEndPointSubUrl =
 			"realms/oneomics/login-actions/authenticate";
-		private const string RedirectUrl = "http://localhost";
-		private const string ClientSecretStaging = "82112d7e-6c3c-4533-ad12-0d1884c40254";
-        private const string ClientSecretVerification ="8d366b2a-8cc1-4af0-bd70-aa44006b0977";
 
-        private const string ClientId = "automation";
 		private const string UserAgent =
 			"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_5) AppleWebKit/537.36 (KHTML, like Gecko)"
 			+ " Postman/7.2.2 Chrome/59.0.3071.115 Electron/1.8.8 Safari/537.36";
@@ -59,13 +70,15 @@ namespace OpenIdConnectLogin
 		public async Task<string> Run()
 		{
 			Console.WriteLine("OpenIdConnect JWT-Token getter hack, v1.0  (c) SCIEX 2019" + Environment.NewLine);
-			Console.WriteLine($"Signing into; {KeyCloakUrlStaging}");
-			_restClient = new RestClient(KeyCloakUrlStaging)
+			Console.WriteLine($"Signing into; {KeyCloakUrlVerification}");
+			_restClient = new RestClient(KeyCloakUrlVerification)
 			{ CookieContainer = new CookieContainer() };
-			Console.Write("Enter your username: ");
-            _username = Console.ReadLine();
-			Console.Write("Enter your password: ");
-            _password = PasswordHelper.GetPassword();
+//			Console.Write("Enter your username: ");
+//            _username = Console.ReadLine();
+//			Console.Write("Enter your password: ");
+//            _password = PasswordHelper.GetPassword();
+            _username = "FitAutomation";
+            _password = "FitTest@2018";
             var accessToken = string.Empty;
 			var formattedTokensAsJson = string.Empty;
 			try
@@ -105,7 +118,9 @@ namespace OpenIdConnectLogin
 				ParameterType.GetOrPost));
 			request.Parameters.Add(new Parameter("response_type", "code",
 				ParameterType.GetOrPost));
-			request.Parameters.Add(new Parameter("redirect_uri", RedirectUrl,
+            request.Parameters.Add(new Parameter("response_mode", "query",
+                ParameterType.GetOrPost));
+            request.Parameters.Add(new Parameter("redirect_uri", RedirectUrl,
 				ParameterType.GetOrPost));
 
 			var response = _restClient.Get(request);
@@ -201,10 +216,10 @@ namespace OpenIdConnectLogin
 				new KeyValuePair<string, string>("code", $"{_authorizationCode}"),
 				new KeyValuePair<string, string>("redirect_uri", RedirectUrl),
 				new KeyValuePair<string, string>("client_id", ClientId),
-				new KeyValuePair<string, string>("client_secret", ClientSecretStaging)
+				new KeyValuePair<string, string>("client_secret", ClientSecretVerification)
 			};
-			const string tokenUrl = KeyCloakUrlStaging + TokenEndPointSubUrl;
-			var rq = new HttpRequestMessage(HttpMethod.Post, new Uri(tokenUrl));
+			
+			var rq = new HttpRequestMessage(HttpMethod.Post, new Uri(KeyCloakUrlTokenEndPointVerification));
 			rq.Content = new FormUrlEncodedContent(nvc);
 			rq.Headers.Add("User-Agent", UserAgent);
 			rq.Headers.Add("Connection", "keep-alive");
@@ -226,7 +241,6 @@ namespace OpenIdConnectLogin
 
 		private async Task<string> GetRefreshTokenFromTokenEndpoint()
 		{
-			var request = new RestRequest(TokenEndPointSubUrl, Method.POST);
             var httpClientHandler = new HttpClientHandler
             {
                 AllowAutoRedirect = false,
@@ -247,10 +261,12 @@ namespace OpenIdConnectLogin
                 new KeyValuePair<string, string>("client_secret", ClientSecretStaging),
                 new KeyValuePair<string, string>("scope", Scope)
 			};
-			const string tokenUrl = KeyCloakUrlStaging + TokenEndPointSubUrl;
-			var rq = new HttpRequestMessage(HttpMethod.Post, new Uri(tokenUrl));
-			rq.Content = new FormUrlEncodedContent(nvc);
-			rq.Headers.Add("User-Agent", UserAgent);
+            var rq = new HttpRequestMessage(HttpMethod.Post,
+                new Uri(KeyCloakUrlTokenEndPointVerification))
+            {
+                Content = new FormUrlEncodedContent(nvc)
+            };
+            rq.Headers.Add("User-Agent", UserAgent);
 			rq.Headers.Add("Connection", "keep-alive");
 			rq.Headers.Add("Cache-control", "no-cache");
 			using (var response = await client.SendAsync(rq))
@@ -275,7 +291,7 @@ namespace OpenIdConnectLogin
 			// very Keycloak specific, and may change in a future version.
 			var doc = new HtmlDocument();
 			doc.LoadHtml(html);
-			var nd = doc.DocumentNode.SelectSingleNode("//form[@id='kc-form-login']");
+			var nd = doc.DocumentNode.SelectSingleNode("//form[@class='form-horizontal']");
 			var actionUri = nd.Attributes["action"].Value;
 			var fixedUri = actionUri.Replace("&amp;", "&");
 			var uri = new Uri(fixedUri);
