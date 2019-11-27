@@ -35,7 +35,7 @@ namespace OpenIdConnectLogin
 
         private const string KeyCloakUrlStaging = "https://keycloak.dev.oneomics.net/auth/";
 		private const string KeyCloakUrlVerification = "https://keycloak.qa.oneomics.net/auth/";
-
+        private const string KeyCloakVerificationBaseAddress = "https://keycloak.qa.oneomics.net";
         private const string KeyCloakUrlTokenEndPointVerification =
             "https://keycloak.qa.oneomics.net/auth/realms/oneomics/protocol/openid-connect/token";
         // getting this is a bit hard -- go to the keycloak admin, oneomics client, change AccessType to "confidential"
@@ -134,67 +134,75 @@ namespace OpenIdConnectLogin
 			return response.Content;
 		}
 
-		private async Task PostLoginRequest(string html, string username, string password)
-		{
-			// Cannot use RestSharp here because RestSharp does not put non-json
-			// correctly into the body of the post
-			var request = new RestRequest(AuthenticateEndPointSubUrl, Method.POST);
-			// disable the auto-redirect so that we don't lose the info
-			// coming back from the initial request.
-			var httpClientHandler = new HttpClientHandler { AllowAutoRedirect = false };
-			var client = new HttpClient(httpClientHandler);
-			client.DefaultRequestHeaders.Clear();
-			client.DefaultRequestHeaders.Accept.Add(
-				new MediaTypeWithQualityHeaderValue("text/html"));
-			client.DefaultRequestHeaders.Accept.Add(
-				new MediaTypeWithQualityHeaderValue("application/xhtml+xml"));
-			client.DefaultRequestHeaders.Accept.Add(
-				new MediaTypeWithQualityHeaderValue("application/xml", 0.9));
-			client.DefaultRequestHeaders.Accept.Add(
-				new MediaTypeWithQualityHeaderValue("image/webp"));
-			client.DefaultRequestHeaders.Accept.Add(
-				new MediaTypeWithQualityHeaderValue("image/apng"));
-			client.DefaultRequestHeaders.Accept.Add(
-				new MediaTypeWithQualityHeaderValue("*/*", 0.8));
-			client.DefaultRequestHeaders.AcceptEncoding.Add(
-				new StringWithQualityHeaderValue("gzip"));
-			client.DefaultRequestHeaders.AcceptEncoding.Add(
-				new StringWithQualityHeaderValue("deflate"));
-			client.DefaultRequestHeaders.AcceptEncoding.Add(
-				new StringWithQualityHeaderValue("br"));
-			client.DefaultRequestHeaders.AcceptLanguage.Add(
-				new StringWithQualityHeaderValue("en-US"));
+        private async Task PostLoginRequest(string html, string username, string password)
+        {
+            // Cannot use RestSharp here because RestSharp does not put non-json
+            // correctly into the body of the post
+            var request = new RestRequest(AuthenticateEndPointSubUrl, Method.POST);
+            // disable the auto-redirect so that we don't lose the info
+            // coming back from the initial request.
+            var cookieContainer = new CookieContainer();
+            var httpClientHandler = new HttpClientHandler { CookieContainer = cookieContainer, AllowAutoRedirect = false };
+            var client = new HttpClient(httpClientHandler);
+            client.DefaultRequestHeaders.Clear();
+            client.DefaultRequestHeaders.Accept.Add(
+                new MediaTypeWithQualityHeaderValue("text/html"));
+            client.DefaultRequestHeaders.Accept.Add(
+                new MediaTypeWithQualityHeaderValue("application/xhtml+xml"));
+            client.DefaultRequestHeaders.Accept.Add(
+                new MediaTypeWithQualityHeaderValue("application/xml", 0.9));
+            client.DefaultRequestHeaders.Accept.Add(
+                new MediaTypeWithQualityHeaderValue("image/webp"));
+            client.DefaultRequestHeaders.Accept.Add(
+                new MediaTypeWithQualityHeaderValue("image/apng"));
+            client.DefaultRequestHeaders.Accept.Add(
+                new MediaTypeWithQualityHeaderValue("*/*", 0.8));
+            client.DefaultRequestHeaders.AcceptEncoding.Add(
+                new StringWithQualityHeaderValue("gzip"));
+            client.DefaultRequestHeaders.AcceptEncoding.Add(
+                new StringWithQualityHeaderValue("deflate"));
+            client.DefaultRequestHeaders.AcceptEncoding.Add(
+                new StringWithQualityHeaderValue("br"));
+            client.DefaultRequestHeaders.AcceptLanguage.Add(
+                new StringWithQualityHeaderValue("en-US"));
 
-			var url = AddRedirectParametersToRequestFromHtml(html, request.Parameters);
-			var nvc = new List<KeyValuePair<string, string>>
-			{
-				new KeyValuePair<string, string>("username", $"{username}"),
-				new KeyValuePair<string, string>("password", $"{password}")
-			};
-			var httpRequestMessage = new HttpRequestMessage(HttpMethod.Post, url);
-			// Cookies come on the response of the first request
-			// we have to add them manually because we don't have an 
-			// active browser doing this for us and are not using RestSharp here
-			httpRequestMessage.Headers.Add("Cookie", $"AUTH_SESSION_ID={_authSessionIdCookieValue}; KC_RESTART={_kcRestartCookieValue}");
-			httpRequestMessage.Content = new FormUrlEncodedContent(nvc);
-			httpRequestMessage.Headers.Add("User-Agent", UserAgent);
-			httpRequestMessage.Headers.Add("prompt", "login"); // force re-login -- openid spec section 3.1.2.3
+            var url = AddRedirectParametersToRequestFromHtml(html, request.Parameters);
+            var nvc = new List<KeyValuePair<string, string>>
+            {
+                new KeyValuePair<string, string>("username", $"{username}"),
+                new KeyValuePair<string, string>("password", $"{password}")
+            };
+            var httpRequestMessage = new HttpRequestMessage(HttpMethod.Post, url);
+            // Cookies come on the response of the first request
+            // we have to add them manually because we don't have an 
+            // active browser doing this for us and are not using RestSharp here
+            cookieContainer.Add(new Uri(KeyCloakVerificationBaseAddress), new Cookie("AUTH_SESSION_ID", _authSessionIdCookieValue));
+            cookieContainer.Add(new Uri(KeyCloakVerificationBaseAddress), new Cookie("KC_RESTART", _kcRestartCookieValue));
 
-			using (var result = await client.SendAsync(httpRequestMessage))
-			{
-				if (!result.IsSuccessStatusCode && result.StatusCode != HttpStatusCode.Found)
-					throw new ApplicationException(
-						"Posting the login request has failed!");
+            httpRequestMessage.Content = new FormUrlEncodedContent(nvc);
+            httpRequestMessage.Headers.Add("User-Agent", UserAgent);
+            httpRequestMessage.Headers.Add("prompt",
+                "login"); // force re-login -- openid spec section 3.1.2.3
 
-				// this results in a 301 redirect, but with the secrets in the redirect URI location.
-				var locationHeader = result.Headers.FirstOrDefault(x => x.Key == "Location");
-				_redirectUri = locationHeader.Value.FirstOrDefault();
-				var uri = new Uri(_redirectUri);
-				_authorizationCode = HttpUtility.ParseQueryString(uri.Query).Get("code");
-			}
-		}
+            using (var result = await client.SendAsync(httpRequestMessage))
+            {
+                if (!result.IsSuccessStatusCode &&
+                    result.StatusCode != HttpStatusCode.Found)
+                    throw new ApplicationException(
+                        "Posting the login request has failed!");
 
-		private async Task<string> GetTokensFromTokenEndpoint()
+                // this results in a 301 redirect, but with the secrets in the redirect URI location.
+                var locationHeader =
+                    result.Headers.FirstOrDefault(x => x.Key == "Location");
+                _redirectUri = locationHeader.Value.FirstOrDefault();
+                Debug.Assert(_redirectUri != null, nameof(_redirectUri) + " != null");
+                var uri = new Uri(_redirectUri);
+                _authorizationCode = HttpUtility.ParseQueryString(uri.Query).Get("code");
+            }
+        }
+
+
+        private async Task<string> GetTokensFromTokenEndpoint()
 		{
 			var request = new RestRequest(TokenEndPointSubUrl, Method.POST);
 			var httpClientHandler = new HttpClientHandler { AllowAutoRedirect = false,
