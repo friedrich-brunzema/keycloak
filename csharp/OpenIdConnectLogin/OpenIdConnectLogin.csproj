@@ -1,21 +1,33 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
-    <PropertyGroup>
-        <OutputType>Exe</OutputType>
-        <TargetFramework>netcoreapp2.2</TargetFramework>
-        <LangVersion>7.3</LangVersion>
-    </PropertyGroup>
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>netcoreapp3.1</TargetFramework>
+    <RootNamespace>gt</RootNamespace>
+    <AssemblyName>dt</AssemblyName>
+    <PackageId>Sciex.Dt</PackageId>
+    <Description>Keycloak token retrieval tool</Description>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+    <PackageReleaseNotes>First release</PackageReleaseNotes>
+    <PackageTags>CLI, Internal</PackageTags>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>gt</ToolCommandName>
+    <PackageOutputPath>./nupkg</PackageOutputPath>
+  </PropertyGroup>
 
-    <ItemGroup>
-      <None Remove="ProgramOld.pld" />
-    </ItemGroup>
 
-    <ItemGroup>
-      <PackageReference Include="HtmlAgilityPack" Version="1.11.8" />
-      <PackageReference Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" Version="5.5.0" />
-      <PackageReference Include="Newtonsoft.Json" Version="12.0.2" />
-      <PackageReference Include="RestSharp" Version="106.6.10" />
-      <PackageReference Include="System.Configuration.ConfigurationManager" Version="4.5.0" />
-    </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="CommandLineParser" Version="2.6.0" />
+    <PackageReference Include="Microsoft.Extensions.Configuration" Version="3.1.4" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.FileExtensions" Version="3.1.4" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="3.1.4" />
+    <PackageReference Include="TextCopy" Version="3.3.0" />
+    <PackageReference Include="HtmlAgilityPack" Version="1.11.8" />
+    <PackageReference Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" Version="5.5.0" />
+    <PackageReference Include="Newtonsoft.Json" Version="12.0.2" />
+    <PackageReference Include="RestSharp" Version="106.6.10" />
+    <PackageReference Include="System.Configuration.ConfigurationManager" Version="4.5.0" />
+  </ItemGroup>
 
 </Project>

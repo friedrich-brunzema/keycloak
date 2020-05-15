@@ -2,7 +2,7 @@
 
 using System;
 
-namespace OpenIdConnectLogin
+namespace gt
 {
 	public static class PasswordHelper
 	{
