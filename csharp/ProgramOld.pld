@@ -10,9 +10,9 @@ using System.Net.Http.Headers;
 using System.Threading.Tasks;
 using System.Web;
 using HtmlAgilityPack;
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using RestSharp;
-using Formatting = Newtonsoft.Json.Formatting;
 
 namespace OpenIdConnectLogin
 {
@@ -30,27 +30,20 @@ namespace OpenIdConnectLogin
 	class Application
 	{
         // WARNING -- these settings below must match the correct URL and IDP.
-        // https://login.qa.oneomics.net/auth/realms/oneomics/.well-known/openid-configuration
+        // https://keycloak.qa.oneomics.net/auth/realms/oneomics/.well-known/openid-configuration
         // has a list of discovery information.  Replace realm name and server name if needed.
 
-        private const string KeyCloakUrlStaging = "https://login.dev.oneomics.net/auth/";
-		private const string KeyCloakUrlVerification = "https://login.qa.oneomics.net/auth/";
-		private const string KeyCloakUrlBeta = "https://login.beta.sciex.com/auth/";
-
-        private const string KeyCloakVerificationBaseAddress = "https://login.qa.oneomics.net";
-        private const string KeyCloakBetaBaseAddress = "https://login.beta.sciex.com";
-        private const string KeyCloakUrlTokenEndPointVerificationQa =
-            "https://login.qa.oneomics.net/auth/realms/oneomics/protocol/openid-connect/token";
-		private const string KeyCloakUrlTokenEndPointVerificationBeta =
-			"https://login.beta.sciex.com/auth/realms/oneomics/protocol/openid-connect/token";
-		// getting this is a bit hard -- go to the keycloak admin, oneomics client, change AccessType to "confidential"
-		// then save.  A new tab appears that has the client secret.  Be sure to reset to Access type to public after.
+        private const string KeyCloakUrlStaging = "https://keycloak.dev.oneomics.net/auth/";
+		private const string KeyCloakUrlVerification = "https://keycloak.qa.oneomics.net/auth/";
+        private const string KeyCloakVerificationBaseAddress = "https://keycloak.qa.oneomics.net";
+        private const string KeyCloakUrlTokenEndPointVerification =
+            "https://keycloak.qa.oneomics.net/auth/realms/oneomics/protocol/openid-connect/token";
+        // getting this is a bit hard -- go to the keycloak admin, oneomics client, change AccessType to "confidential"
+        // then save.  A new tab appears that has the client secret.  Be sure to reset to Access type to public after.
         private const string ClientSecretStaging = "82112d7e-6c3c-4533-ad12-0d1884c40254";
         private const string ClientSecretVerification = "ff36904c-75b7-4086-9eda-607fe3e2e92e";
         // the re-direct URL must match the settings on the Keycloak IDP
-        private const string RedirectUrlQa = "https://qa.oneomics.net/";
-        private const string RedirectUrlBeta = "https://multiomics.beta.sciex.com/";
-
+        private const string RedirectUrl = "https://qa.oneomics.net/";
         private const string ClientId = "oneomics";
 
         private const string TokenEndPointSubUrl =
@@ -77,14 +70,14 @@ namespace OpenIdConnectLogin
 		public async Task<string> Run()
 		{
 			Console.WriteLine("OpenIdConnect JWT-Token getter hack, v1.0  (c) SCIEX 2019" + Environment.NewLine);
-			Console.WriteLine($"Signing into; {KeyCloakUrlBeta}");
-			_restClient = new RestClient(KeyCloakUrlBeta)
+			Console.WriteLine($"Signing into; {KeyCloakUrlVerification}");
+			_restClient = new RestClient(KeyCloakUrlVerification)
 			{ CookieContainer = new CookieContainer() };
 //			Console.Write("Enter your username: ");
 //            _username = Console.ReadLine();
 //			Console.Write("Enter your password: ");
 //            _password = PasswordHelper.GetPassword();
-            _username = "FITAutomation";
+            _username = "FitAutomation";
             _password = "FitTest@2018";
             var accessToken = string.Empty;
 			var formattedTokensAsJson = string.Empty;
@@ -127,7 +120,7 @@ namespace OpenIdConnectLogin
 				ParameterType.GetOrPost));
             request.Parameters.Add(new Parameter("response_mode", "query",
                 ParameterType.GetOrPost));
-            request.Parameters.Add(new Parameter("redirect_uri", RedirectUrlBeta,
+            request.Parameters.Add(new Parameter("redirect_uri", RedirectUrl,
 				ParameterType.GetOrPost));
 
 			var response = _restClient.Get(request);
@@ -183,8 +176,8 @@ namespace OpenIdConnectLogin
             // Cookies come on the response of the first request
             // we have to add them manually because we don't have an 
             // active browser doing this for us and are not using RestSharp here
-            cookieContainer.Add(new Uri(KeyCloakBetaBaseAddress), new Cookie("AUTH_SESSION_ID", _authSessionIdCookieValue));
-            cookieContainer.Add(new Uri(KeyCloakBetaBaseAddress), new Cookie("KC_RESTART", _kcRestartCookieValue));
+            cookieContainer.Add(new Uri(KeyCloakVerificationBaseAddress), new Cookie("AUTH_SESSION_ID", _authSessionIdCookieValue));
+            cookieContainer.Add(new Uri(KeyCloakVerificationBaseAddress), new Cookie("KC_RESTART", _kcRestartCookieValue));
 
             httpRequestMessage.Content = new FormUrlEncodedContent(nvc);
             httpRequestMessage.Headers.Add("User-Agent", UserAgent);
@@ -229,12 +222,12 @@ namespace OpenIdConnectLogin
 			{
 				new KeyValuePair<string, string>("grant_type", "authorization_code"),
 				new KeyValuePair<string, string>("code", $"{_authorizationCode}"),
-				new KeyValuePair<string, string>("redirect_uri", RedirectUrlBeta),
+				new KeyValuePair<string, string>("redirect_uri", RedirectUrl),
 				new KeyValuePair<string, string>("client_id", ClientId),
-				//new KeyValuePair<string, string>("client_secret", ClientSecretVerification)
+				new KeyValuePair<string, string>("client_secret", ClientSecretVerification)
 			};
 			
-			var rq = new HttpRequestMessage(HttpMethod.Post, new Uri(KeyCloakUrlTokenEndPointVerificationBeta));
+			var rq = new HttpRequestMessage(HttpMethod.Post, new Uri(KeyCloakUrlTokenEndPointVerification));
 			rq.Content = new FormUrlEncodedContent(nvc);
 			rq.Headers.Add("User-Agent", UserAgent);
 			rq.Headers.Add("Connection", "keep-alive");
@@ -253,46 +246,6 @@ namespace OpenIdConnectLogin
 				}
 			}
 		}
-
-        private async Task LogoutFromKeyCloak()
-        {
-            var request = new RestRequest("https://login.qa.oneomics.net/auth", Method.POST);
-            var httpClientHandler = new HttpClientHandler
-            {
-                AllowAutoRedirect = false,
-                AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate
-            };
-            var client = new HttpClient(httpClientHandler);
-            client.DefaultRequestHeaders.Clear();
-            client.DefaultRequestHeaders.Accept.Add(
-                new MediaTypeWithQualityHeaderValue("*/*"));
-            client.DefaultRequestHeaders.AcceptEncoding.Add(
-                new StringWithQualityHeaderValue("gzip"));
-            client.DefaultRequestHeaders.AcceptEncoding.Add(
-                new StringWithQualityHeaderValue("deflate"));
-            client.DefaultRequestHeaders.AcceptLanguage.Add(
-                new StringWithQualityHeaderValue("en-US"));
-
-            var nvc = new List<KeyValuePair<string, string>>
-            {
-                new KeyValuePair<string, string>("client_id", ClientId),
-            };
-
-            var rq = new HttpRequestMessage(HttpMethod.Post, new Uri("realms/oneomics/protocol/openid-connect/logout"));
-            rq.Content = new FormUrlEncodedContent(nvc);
-            rq.Headers.Add("User-Agent", UserAgent);
-            rq.Headers.Add("Connection", "keep-alive");
-            rq.Headers.Add("Cache-control", "no-cache");
-            rq.Headers.Add("Cookie",
-                $"AUTH_SESSION_ID={_authSessionIdCookieValue}; KC_RESTART={_kcRestartCookieValue}");
-            using (var response = await client.SendAsync(rq))
-            {
-                if (!response.IsSuccessStatusCode)
-                    throw new ApplicationException(
-                        "Error getting token from the logout endpoint");
-                
-            }
-        }
 
 		private async Task<string> GetRefreshTokenFromTokenEndpoint()
 		{
@@ -317,7 +270,7 @@ namespace OpenIdConnectLogin
                 new KeyValuePair<string, string>("scope", Scope)
 			};
             var rq = new HttpRequestMessage(HttpMethod.Post,
-                new Uri(KeyCloakUrlTokenEndPointVerificationBeta))
+                new Uri(KeyCloakUrlTokenEndPointVerification))
             {
                 Content = new FormUrlEncodedContent(nvc)
             };

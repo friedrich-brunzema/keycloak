@@ -7,6 +7,10 @@
     </PropertyGroup>
 
     <ItemGroup>
+      <None Remove="ProgramOld.pld" />
+    </ItemGroup>
+
+    <ItemGroup>
       <PackageReference Include="HtmlAgilityPack" Version="1.11.8" />
       <PackageReference Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" Version="5.5.0" />
       <PackageReference Include="Newtonsoft.Json" Version="12.0.2" />
