@@ -16,7 +16,7 @@ namespace gt
             var productVersion = fvi.ProductVersion;
             var gitsha = productVersion.TrimStart("1.0.0+".ToCharArray()).Substring(0, 7);
             Console.WriteLine($"dt version {version}, build={gitsha}");
-            Console.WriteLine($"Copyright 2020 (c) SCIEX.  All rights reserved.");
+            Console.WriteLine("Copyright 2020 (c) SCIEX.  All rights reserved.");
             return 0;
         }
     }

@@ -1,0 +1,13 @@
+﻿<Project>
+  <PropertyGroup>
+    <FileVersion>1.0.2</FileVersion>
+    <PackageVersion>1.0.2</PackageVersion>
+  </PropertyGroup>
+  <PropertyGroup>
+    <Authors>DanaherDigital</Authors>
+    <Company>DanaherDigital</Company>
+    <AssemblyVersion>1.0.0</AssemblyVersion>
+    <Copyright>Copyright 2019 (c)Sciex. All rights reserved.</Copyright>
+    <NeutralLanguage>en</NeutralLanguage>
+  </PropertyGroup>
+</Project>
